@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1d4ed8">
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Registro incidencia AGV</title>
+</head>
+<body>
+  <header class="header">
+    <div class="container header__content">
+      <div>
+        <h1>Registro de incidencia AGV</h1>
+        <div id="connection_status" class="connection-status" aria-live="polite">
+          <span class="status-dot status-dot--offline"></span>
+          <span class="status-text">Offline (local)</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="container">
+      <div id="app_messages" class="app-messages" role="status" aria-live="polite"></div>
+
+      <nav class="tabs" aria-label="Secciones">
+        <button type="button" class="tab tab--active" data-tab="nueva">Nueva incidencia</button>
+        <button type="button" class="tab" data-tab="historico">Histórico</button>
+      </nav>
+
+      <section id="tab_nueva_incidencia" class="tab-content">
+        <div class="card">
+          <div class="card__header">
+            <h2>Formulario de incidencia</h2>
+          </div>
+          <form id="incidencia-form" class="form-grid" novalidate>
+            <fieldset class="form-fieldset">
+              <legend>Datos del incidente</legend>
+              <div class="form-field">
+                <label for="circuito">Circuito <span aria-hidden="true">*</span></label>
+                <select id="circuito" name="circuito" required aria-required="true">
+                  <option value="">Selecciona un circuito</option>
+                  <option value="MO3">MO3</option>
+                  <option value="MO1">MO1</option>
+                  <option value="Portadores">Portadores</option>
+                </select>
+                <p class="field-error" data-error-for="circuito" role="status" aria-live="polite"></p>
+              </div>
+
+              <div class="form-row">
+                <div class="form-field">
+                  <label for="agv">AGV <span aria-hidden="true">*</span></label>
+                  <select id="agv" name="agv" required aria-required="true">
+                    <option value="">Selecciona un circuito primero</option>
+                  </select>
+                  <p class="field-error" data-error-for="agv" role="status" aria-live="polite"></p>
+                </div>
+                <div class="form-field">
+                  <label for="bateria_valor">Batería</label>
+                  <input type="number" id="bateria_valor" name="bateria_valor" placeholder="Batería" min="0" max="999" inputmode="numeric">
+                </div>
+                <div class="form-field checkbox-field">
+                  <input type="checkbox" id="bateria_no_gmp" name="bateria_no_gmp">
+                  <label for="bateria_no_gmp">No es de GMP</label>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-field">
+                  <label for="incidente_fecha">Fecha del incidente <span aria-hidden="true">*</span></label>
+                  <input type="date" id="incidente_fecha" name="incidente_fecha" required aria-required="true">
+                  <p class="field-error" data-error-for="incidente_fecha" role="status" aria-live="polite"></p>
+                </div>
+                <div class="form-field">
+                  <label for="incidente_hora">Hora del incidente <span aria-hidden="true">*</span></label>
+                  <input type="time" id="incidente_hora" name="incidente_hora" required aria-required="true">
+                  <p class="field-error" data-error-for="incidente_hora" role="status" aria-live="polite"></p>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-fieldset">
+              <legend>Clasificación del fallo</legend>
+              <div class="form-field">
+                <label for="fallo_tipo">Tipo de fallo <span aria-hidden="true">*</span></label>
+                <select id="fallo_tipo" name="fallo_tipo" required aria-required="true">
+                  <option value="">Selecciona un tipo de fallo</option>
+                  <option value="parado">Parado</option>
+                  <option value="fuera_de_guia">Fuera de guía</option>
+                  <option value="se_salta_parada">Se salta parada</option>
+                  <option value="bateria">Batería</option>
+                  <option value="apagado">Apagado</option>
+                  <option value="muy_despacio">Muy despacio</option>
+                </select>
+                <p class="field-error" data-error-for="fallo_tipo" role="status" aria-live="polite"></p>
+              </div>
+
+              <div class="form-field">
+                <label for="fallo_detalle">Detalle de fallo <span aria-hidden="true">*</span></label>
+                <select id="fallo_detalle" name="fallo_detalle" required aria-required="true">
+                  <option value="">Selecciona primero un tipo de fallo</option>
+                </select>
+                <p class="field-error" data-error-for="fallo_detalle" role="status" aria-live="polite"></p>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-fieldset">
+              <legend>Impacto y acción</legend>
+              <div class="form-field">
+                <span>Estado del carro</span>
+                <div class="checkbox-group">
+                  <label class="checkbox-field">
+                    <input type="checkbox" id="estado_vacio" name="estado_vacio">
+                    <span>Vacío</span>
+                  </label>
+                  <label class="checkbox-field">
+                    <input type="checkbox" id="estado_lleno" name="estado_lleno">
+                    <span>Lleno</span>
+                  </label>
+                </div>
+                <small class="help-text">Indica si el AGV transportaba piezas en el momento del incidente.</small>
+                <p class="field-error" data-error-for="estado_carga" role="status" aria-live="polite"></p>
+              </div>
+
+              <div class="field-row field-row--minutos-taller">
+                <div class="field-group field-group--minutos field--small">
+                  <label for="minutos_parada">Minutos por incidencia</label>
+                  <input type="number" id="minutos_parada" name="minutos_parada" min="0" max="99" value="0">
+                  <p class="field-error" data-error-for="minutos_parada" role="status" aria-live="polite"></p>
+                </div>
+                <div class="field-group field-group--taller">
+                  <label class="checkbox-inline">
+                    <input type="checkbox" id="requiere_taller" name="requiere_taller">
+                    <span class="checkbox-icon" aria-hidden="true">🛠</span>
+                    <span>Se lleva al taller</span>
+                  </label>
+                  <p class="field-error" data-error-for="requiere_taller" role="status" aria-live="polite"></p>
+                </div>
+              </div>
+
+              <div class="form-field">
+                <label for="posicion_codigo">Posición en el circuito</label>
+                <input type="text" id="posicion_codigo" name="posicion_codigo" placeholder="Código o referencia" aria-describedby="ayuda_posicion">
+                <small id="ayuda_posicion" class="help-text">Ejemplo: Tag, estación o zona.</small>
+                <p class="field-error" data-error-for="posicion_codigo" role="status" aria-live="polite"></p>
+              </div>
+
+              <div class="form-field">
+                <label for="observaciones">Observaciones</label>
+                <textarea id="observaciones" name="observaciones" rows="3"></textarea>
+                <p class="field-error" data-error-for="observaciones" role="status" aria-live="polite"></p>
+              </div>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" id="btn_guardar" class="btn btn-primary">Guardar incidencia</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="tab_historico" class="tab-content tab-content--hidden">
+        <div class="card">
+          <div class="card__header">
+            <h2>Incidencias registradas en este dispositivo</h2>
+          </div>
+          <div class="form-row filtro-fechas">
+            <div class="form-field">
+              <label for="filtro_desde">Desde</label>
+              <input type="date" id="filtro_desde" name="filtro_desde">
+            </div>
+            <div class="form-field">
+              <label for="filtro_hasta">Hasta</label>
+              <input type="date" id="filtro_hasta" name="filtro_hasta">
+            </div>
+            <div class="form-field">
+              <label>&nbsp;</label>
+              <button type="button" id="btn_filtrar_historico" class="btn">Filtrar</button>
+            </div>
+            <div class="form-field">
+              <label>&nbsp;</label>
+              <button type="button" id="btn_exportar_csv" class="btn">Exportar CSV</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table id="tabla_incidencias">
+              <caption>Listado de incidencias almacenadas en este dispositivo</caption>
+              <thead>
+                <tr>
+                  <th class="col-fecha">Fecha incidente</th>
+                  <th class="col-circuito">Circuito</th>
+                  <th class="col-agv">AGV</th>
+                  <th class="col-tipo">Tipo</th>
+                  <th class="col-detalle">Detalle</th>
+                  <th class="col-minutos">Minutos parada</th>
+                  <th class="col-posicion">Posición</th>
+                  <th class="col-taller">Taller</th>
+                </tr>
+              </thead>
+              <tbody>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>Operativo sin conexión. Los datos se almacenan en este dispositivo.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
