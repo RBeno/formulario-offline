@@ -979,15 +979,62 @@ function limpiarFormularioParcial() {
 }
 
 /**
+ * Registra los eventos de guardado para evitar envíos clásicos del formulario.
+ */
+function registrarEventosGuardarIncidencia() {
+  const btnGuardar = document.getElementById("btn_guardar_incidencia");
+  const form = document.getElementById("incidenciaForm");
+
+  const manejarGuardado = () => {
+    if (btnGuardar) btnGuardar.disabled = true;
+    try {
+      const incidencia = crearIncidenciaDesdeFormulario();
+      if (!incidencia) return;
+
+      const lista = cargarIncidencias();
+      if (existeIncidenciaDuplicada(lista, incidencia)) {
+        mostrarMensajeError("Ya existe una incidencia igual para ese AGV, fecha y tipo de fallo.");
+        return;
+      }
+
+      lista.push(incidencia);
+      guardarIncidencias(lista);
+
+      limpiarFormularioParcial();
+      refrescarTablaSegunTab();
+
+      const minutosInfo = Number.isFinite(incidencia.minutos_parada) ? `${incidencia.minutos_parada} min` : "0 min";
+      mostrarMensajeExito(`Incidencia guardada para ${incidencia.circuito || ""} ${incidencia.agv_id || ""} (${incidencia.fallo_tipo || ""} · ${minutosInfo}).`);
+    } finally {
+      if (btnGuardar) btnGuardar.disabled = false;
+    }
+  };
+
+  if (form) {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      manejarGuardado();
+    });
+  }
+
+  if (!btnGuardar) {
+    console.warn('Botón "Guardar incidencia" no encontrado');
+    return;
+  }
+
+  btnGuardar.addEventListener("click", (event) => {
+    event.preventDefault();
+    manejarGuardado();
+  });
+}
+
+/**
  * Punto de entrada: inicializa formulario y tabla.
  */
 function initFormulario() {
   const circuitoSelect = $("#circuito");
   const falloTipoSelect = $("#fallo_tipo");
-  const falloDetalleSelect = $("#fallo_detalle");
-  const form = $("#incidencia-form");
   const exportBtn = $("#btn_exportar_csv");
-  const btnGuardar = document.getElementById("btn_guardar");
   const minutosParadaInput = $("#minutos_parada");
 
   setDefaultsIncidenteAhora();
@@ -1015,33 +1062,7 @@ function initFormulario() {
     renderSelectOptions(falloTipoSelect, getFallosTipoOptions(), placeholder);
   }
 
-  if (form) {
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (btnGuardar) btnGuardar.disabled = true;
-      try {
-        const incidencia = crearIncidenciaDesdeFormulario();
-        if (!incidencia) return;
-
-        const lista = cargarIncidencias();
-        if (existeIncidenciaDuplicada(lista, incidencia)) {
-          mostrarMensajeError("Ya existe una incidencia igual para ese AGV, fecha y tipo de fallo.");
-          return;
-        }
-
-        lista.push(incidencia);
-        guardarIncidencias(lista);
-
-        limpiarFormularioParcial();
-        refrescarTablaSegunTab();
-
-        const minutosInfo = Number.isFinite(incidencia.minutos_parada) ? `${incidencia.minutos_parada} min` : "0 min";
-        mostrarMensajeExito(`Incidencia guardada para ${incidencia.circuito || ""} ${incidencia.agv_id || ""} (${incidencia.fallo_tipo || ""} · ${minutosInfo}).`);
-      } finally {
-        if (btnGuardar) btnGuardar.disabled = false;
-      }
-    });
-  }
+  registrarEventosGuardarIncidencia();
 
   if (exportBtn) {
     exportBtn.addEventListener("click", exportarCSV);
