@@ -25,7 +25,9 @@ const FALLOS = {
       { value: "error_centralita", label: "Error de centralita" },
       { value: "gira_no_avanza", label: "Gira pero no avanza" },
       { value: "parada_manual", label: "Parada manual" },
-      { value: "parada_seta", label: "Parada seta" }
+      { value: "parada_seta", label: "Parada seta" },
+      { value: "velocidad_restaurada", label: "Velocidad restaurada" },
+      { value: "no_avanza", label: "No avanza" }
     ]
   },
   fuera_de_guia: {
@@ -72,6 +74,16 @@ const FALLOS = {
       { value: "mapa_incorrecto", label: "Mapa incorrecto" },
       { value: "fallo_interno", label: "Fallo interno" }
     ]
+  },
+  sick: {
+    label: "Sick",
+    detalles: [
+      { value: "u1", label: "U1" },
+      { value: "n5", label: "N5" },
+      { value: "e1", label: "E1" },
+      { value: "iniciando", label: "Iniciando" },
+      { value: "otro", label: "Otro" }
+    ]
   }
 };
 
@@ -85,7 +97,7 @@ const FALLOS = {
  * @property {string} incidente_hora
  * @property {string} fallo_tipo
  * @property {string} fallo_detalle
- * @property {string} estado_carga
+ * @property {number} estado_carga
  * @property {number|null} bateria_valor
  * @property {boolean} bateria_no_gmp
  * @property {boolean} requiere_taller
@@ -98,11 +110,30 @@ const FALLOS = {
 
 // Utilidades de almacenamiento (localStorage)
 
+let storageDisponibleFlag = true;
+
+function storageDisponible() {
+  try {
+    const testKey = "__storage_test__";
+    localStorage.setItem(testKey, "1");
+    localStorage.removeItem(testKey);
+    return true;
+  } catch (error) {
+    console.warn("localStorage no disponible", error);
+    return false;
+  }
+}
+
 /**
  * Lee incidencias desde localStorage.
  * @returns {IncidenciaAGV[]} Lista de incidencias o []
  */
 function cargarIncidencias() {
+  if (!storageDisponibleFlag && !storageDisponible()) {
+    storageDisponibleFlag = false;
+    mostrarMensajeError("El almacenamiento local no está disponible en este navegador.");
+    return [];
+  }
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
   try {
@@ -119,6 +150,11 @@ function cargarIncidencias() {
  * @param {IncidenciaAGV[]} lista
  */
 function guardarIncidencias(lista) {
+  if (!storageDisponibleFlag && !storageDisponible()) {
+    storageDisponibleFlag = false;
+    mostrarMensajeError("No se pudieron guardar las incidencias: almacenamiento local no disponible.");
+    return;
+  }
   try {
     const safeList = Array.isArray(lista) ? lista : [];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safeList));
@@ -213,23 +249,41 @@ const isAgvValido = (circuito, agvValor) => {
 };
 
 // Estado de carga (checkboxes exclusivos)
-function initEstadoCargaCheckboxes() {
+function initEstadoCarro() {
   const estadoVacio = $("#estado_vacio");
   const estadoLleno = $("#estado_lleno");
 
   if (!estadoVacio || !estadoLleno) return;
 
-  const toggleExclusive = (source, target) => {
-    source.addEventListener("change", () => {
-      if (source.checked) target.checked = false;
-    });
+  const asegurarVacioCuandoAmbosDesmarcados = () => {
+    if (!estadoVacio.checked && !estadoLleno.checked) {
+      estadoVacio.checked = true;
+    }
   };
 
-  toggleExclusive(estadoVacio, estadoLleno);
-  toggleExclusive(estadoLleno, estadoVacio);
+  estadoVacio.addEventListener("change", () => {
+    if (estadoVacio.checked) {
+      estadoLleno.checked = false;
+    } else {
+      asegurarVacioCuandoAmbosDesmarcados();
+    }
+  });
+
+  estadoLleno.addEventListener("change", () => {
+    if (estadoLleno.checked) {
+      estadoVacio.checked = false;
+    } else {
+      asegurarVacioCuandoAmbosDesmarcados();
+    }
+  });
 
   estadoVacio.checked = true;
   estadoLleno.checked = false;
+}
+
+// Alias para compatibilidad
+function initEstadoCargaCheckboxes() {
+  initEstadoCarro();
 }
 
 // Lógica de formulario (lectura, validación, creación de objeto)
@@ -288,6 +342,12 @@ function actualizarEstadoConexion(modo, online) {
   }
 }
 
+function initEstadoConexionUI() {
+  actualizarEstadoConexion("local", navigator.onLine);
+  window.addEventListener("online", () => actualizarEstadoConexion("local", true));
+  window.addEventListener("offline", () => actualizarEstadoConexion("local", false));
+}
+
 function limpiarErroresCampos() {
   Object.keys(fieldErrors).forEach((key) => delete fieldErrors[key]);
   document.querySelectorAll(".input-error").forEach((el) => el.classList.remove("input-error"));
@@ -334,6 +394,7 @@ function crearIncidenciaBase(formValues = {}) {
   })();
 
   const minutosParada = Number(formValues.minutos_parada);
+  const estadoCarga = formValues.estado_carga === 1 || formValues.estado_carga === "1" || formValues.estado_carga === true ? 1 : 0;
 
   return {
     id: formValues.id || generatedId,
@@ -344,7 +405,7 @@ function crearIncidenciaBase(formValues = {}) {
     incidente_hora: formValues.incidente_hora || "",
     fallo_tipo: formValues.fallo_tipo || "",
     fallo_detalle: formValues.fallo_detalle || "",
-    estado_carga: formValues.estado_carga || "",
+    estado_carga: estadoCarga,
     bateria_valor: Number.isFinite(formValues.bateria_valor) ? formValues.bateria_valor : null,
     bateria_no_gmp: Boolean(formValues.bateria_no_gmp),
     requiere_taller: requiereTaller,
@@ -366,27 +427,74 @@ function $(id) {
 }
 
 /**
- * Valida campos mínimos del formulario, lanza Error si falta algo.
- * @param {Object} payload
+ * Valida los campos obligatorios del formulario.
+ * @returns {{ esValido: boolean, camposInvalidos: string[], valores: { circuito: string, agv: string, fechaIncidente: string, horaIncidente: string, tipoFallo: string, detalleFallo: string } }}
  */
-function validarIncidenciaPayload(payload) {
-  const faltantes = [];
-  if (!payload.circuito) faltantes.push("circuito");
-  if (!payload.agv_id) faltantes.push("agv");
-  if (payload.circuito && payload.agv_id && !isAgvValido(payload.circuito, payload.agv_id)) {
-    faltantes.push("agv no coincide con el circuito");
-    marcarErrorCampo("agv", "Selecciona un AGV válido para el circuito");
-  }
-  if (!payload.incidente_fecha) faltantes.push("fecha de incidente");
-  if (!payload.incidente_hora) faltantes.push("hora de incidente");
-  if (!payload.fallo_tipo) faltantes.push("tipo de fallo");
-  if (!payload.fallo_detalle) faltantes.push("detalle de fallo");
+function validarCamposObligatorios() {
+  const circuitoEl = document.getElementById("circuito");
+  const agvEl = document.getElementById("agv");
+  const fechaEl = document.getElementById("incidente_fecha");
+  const horaEl = document.getElementById("incidente_hora");
+  const tipoFalloEl = document.getElementById("fallo_tipo");
+  const detalleFalloEl = document.getElementById("fallo_detalle");
 
-  if (faltantes.length) {
-    const mensaje = `Revisa los campos: ${faltantes.join(", ")}`;
-    mostrarMensajeError(mensaje);
-    throw new Error(mensaje);
+  const circuito = circuitoEl?.value?.trim() || "";
+  const agv = agvEl?.value?.trim() || "";
+  const fechaIncidente = fechaEl?.value?.trim() || "";
+  const horaIncidente = horaEl?.value?.trim() || "";
+  const tipoFallo = tipoFalloEl?.value?.trim() || "";
+  const detalleFallo = detalleFalloEl?.value?.trim() || "";
+
+  const camposInvalidos = [];
+
+  if (!circuito) camposInvalidos.push("circuito");
+  if (!agv) camposInvalidos.push("agv");
+  if (!fechaIncidente) camposInvalidos.push("fecha de incidente");
+  if (!horaIncidente) camposInvalidos.push("hora de incidente");
+  if (!tipoFallo) camposInvalidos.push("tipo de fallo");
+  if (!detalleFallo) camposInvalidos.push("detalle de fallo");
+
+  if (circuito && agv) {
+    const listaAgvs = (AGVS_POR_CIRCUITO[circuito] || []).map(String);
+    if (listaAgvs.length && !listaAgvs.includes(String(agv))) {
+      camposInvalidos.push("agv");
+    }
   }
+
+  return {
+    esValido: camposInvalidos.length === 0,
+    camposInvalidos,
+    valores: {
+      circuito,
+      agv,
+      fechaIncidente,
+      horaIncidente,
+      tipoFallo,
+      detalleFallo
+    }
+  };
+}
+
+/**
+ * Marca visualmente los campos con error.
+ * @param {string[]} camposInvalidos
+ */
+function marcarErroresCampos(camposInvalidos) {
+  limpiarErroresCampos();
+  const idPorCampo = {
+    circuito: "circuito",
+    agv: "agv",
+    "fecha de incidente": "incidente_fecha",
+    "hora de incidente": "incidente_hora",
+    "tipo de fallo": "fallo_tipo",
+    "detalle de fallo": "fallo_detalle"
+  };
+
+  camposInvalidos.forEach((campo) => {
+    const idCampo = idPorCampo[campo] || campo;
+    const mensaje = campo === "agv" ? "Selecciona un AGV válido para el circuito" : "Obligatorio";
+    marcarErrorCampo(idCampo, mensaje);
+  });
 }
 
 /**
@@ -394,19 +502,26 @@ function validarIncidenciaPayload(payload) {
  * Devuelve null si no es válida.
  * @returns {IncidenciaAGV|null}
  */
-function crearIncidenciaDesdeFormulario() {
-  limpiarErroresCampos();
-  limpiarMensajes();
+function crearIncidenciaDesdeFormulario(valoresObligatorios) {
+  if (!valoresObligatorios) {
+    limpiarErroresCampos();
+    limpiarMensajes();
+  }
 
-  const circuito = ($("#circuito")?.value || "").trim();
-  const agv = ($("#agv")?.value || "").trim();
-  const incidenteFecha = $("#incidente_fecha")?.value || "";
-  const incidenteHora = $("#incidente_hora")?.value || "";
-  const falloTipo = $("#fallo_tipo")?.value || "";
-  const falloDetalle = $("#fallo_detalle")?.value || "";
+  const validacion = valoresObligatorios
+    ? { esValido: true, camposInvalidos: [], valores: valoresObligatorios }
+    : validarCamposObligatorios();
+
+  if (!validacion.esValido) {
+    marcarErroresCampos(validacion.camposInvalidos);
+    mostrarMensajeError(`Revisa los campos: ${validacion.camposInvalidos.join(", ")}`);
+    return null;
+  }
+
+  const { circuito, agv, fechaIncidente, horaIncidente, tipoFallo, detalleFallo } = validacion.valores;
   const estadoVacio = Boolean($("#estado_vacio")?.checked);
   const estadoLleno = Boolean($("#estado_lleno")?.checked);
-  const estadoCarga = estadoVacio ? "vacio" : estadoLleno ? "cargado" : "desconocido";
+  const estadoCarga = estadoLleno ? 1 : 0;
   const requiereTaller = Boolean($("#requiere_taller")?.checked);
   const minutosInput = document.getElementById("minutos_parada");
   let minutosParada = 0;
@@ -429,10 +544,10 @@ function crearIncidenciaDesdeFormulario() {
     created_at: new Date().toISOString(),
     circuito,
     agv_id: agv,
-    incidente_fecha: incidenteFecha,
-    incidente_hora: incidenteHora,
-    fallo_tipo: falloTipo,
-    fallo_detalle: falloDetalle,
+    incidente_fecha: fechaIncidente,
+    incidente_hora: horaIncidente,
+    fallo_tipo: tipoFallo,
+    fallo_detalle: detalleFallo,
     estado_carga: estadoCarga,
     bateria_valor: bateriaValor,
     bateria_no_gmp: bateriaNoGmp,
@@ -442,19 +557,6 @@ function crearIncidenciaDesdeFormulario() {
     posicion_nota: posicionCodigo,
     observaciones
   });
-
-  try {
-    validarIncidenciaPayload(payload);
-  } catch (error) {
-    console.error("Formulario incompleto o inválido", error);
-    marcarErrorCampo("circuito", !circuito ? "Obligatorio" : "");
-    marcarErrorCampo("agv", !agv ? "Obligatorio" : "");
-    marcarErrorCampo("incidente_fecha", !incidenteFecha ? "Obligatorio" : "");
-    marcarErrorCampo("incidente_hora", !incidenteHora ? "Obligatorio" : "");
-    marcarErrorCampo("fallo_tipo", !falloTipo ? "Obligatorio" : "");
-    marcarErrorCampo("fallo_detalle", !falloDetalle ? "Obligatorio" : "");
-    return null;
-  }
 
   return payload;
 }
@@ -614,7 +716,9 @@ function refrescarTablaSegunTab() {
   if (historicoVisible && historicoInicializado) {
     aplicarFiltroHistorico();
   } else {
-    renderTablaIncidencias();
+    const todas = cargarIncidencias();
+    ultimoHistoricoFiltrado = todas;
+    renderTablaIncidencias(todas);
   }
 }
 
@@ -712,7 +816,7 @@ function renderTablaIncidencias(lista) {
   if (!incidencias.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 8;
+    cell.colSpan = 9;
     cell.textContent = "No hay incidencias registradas.";
     row.appendChild(cell);
     tbody.appendChild(row);
@@ -725,13 +829,17 @@ function renderTablaIncidencias(lista) {
     if (inc.fallo_tipo) row.classList.add(`tipo-${inc.fallo_tipo}`);
     if (inc.circuito) row.classList.add(`fila-circuito-${inc.circuito}`);
     const fechaIncidente = `${inc.incidente_fecha || ""}${inc.incidente_hora ? " " + inc.incidente_hora : ""}`.trim();
+    const estadoTexto = inc && (inc.estado_carga === 1 || inc.estado_carga === "1" || inc.estado_carga === true) ? "Lleno" : "Vacío";
+    const tipoLabel = FALLOS[inc.fallo_tipo]?.label || inc.fallo_tipo || "-";
+    const detalleLabel = (FALLOS[inc.fallo_tipo]?.detalles || []).find((d) => d.value === inc.fallo_detalle)?.label || inc.fallo_detalle || "-";
 
     const columns = [
       fechaIncidente || "-",
       inc.circuito || "-",
       inc.agv_id || "-",
-      inc.fallo_tipo || "-",
-      inc.fallo_detalle || "-",
+      tipoLabel,
+      detalleLabel,
+      estadoTexto,
       Number.isFinite(inc.minutos_parada) ? inc.minutos_parada : "-",
       inc.posicion_codigo || "-",
       inc.requiere_taller ? "Sí" : "No"
@@ -751,6 +859,10 @@ function renderTablaIncidencias(lista) {
 
 // Alias para compatibilidad
 function pintarTablaIncidencias(lista) {
+  renderTablaIncidencias(lista);
+}
+
+function pintarHistorico(lista) {
   renderTablaIncidencias(lista);
 }
 
@@ -785,35 +897,37 @@ function filtrarIncidencias(desde, hasta, agvFiltro) {
  * Inicializa filtros del histórico y ejecuta filtrado.
  */
 let historicoInicializado = false;
+let ultimoHistoricoFiltrado = [];
 
 function aplicarFiltroHistorico() {
-  const desde = $("#filtro_desde")?.value || "";
-  const hasta = $("#filtro_hasta")?.value || "";
+  const desde = $("#filtro_fecha_desde")?.value || "";
+  const hasta = $("#filtro_fecha_hasta")?.value || "";
   const agvFiltro = $("#filtro_agv")?.value || "";
   const filtradas = filtrarIncidencias(desde, hasta, agvFiltro);
+  ultimoHistoricoFiltrado = filtradas;
   renderTablaIncidencias(filtradas);
 }
 
-function initFiltrosHistorico() {
-  const filtroDesde = $("#filtro_desde");
-  const filtroHasta = $("#filtro_hasta");
+function initHistorico() {
+  const filtroDesde = $("#filtro_fecha_desde");
+  const filtroHasta = $("#filtro_fecha_hasta");
   const btnFiltrar = $("#btn_filtrar_historico");
   const filtroAgv = $("#filtro_agv");
 
-  if (!filtroDesde || !filtroHasta || !btnFiltrar || !filtroAgv) {
-    console.warn("Filtros de histórico no encontrados en el DOM");
-    historicoInicializado = true;
-    renderTablaIncidencias();
-    return;
+  if (filtroAgv && !filtroAgv.value) filtroAgv.value = "";
+
+  if (btnFiltrar) {
+    btnFiltrar.addEventListener("click", (event) => {
+      event.preventDefault();
+      aplicarFiltroHistorico();
+    });
   }
 
-  if (!filtroDesde.value) filtroDesde.value = hoyInput();
-  if (!filtroHasta.value) filtroHasta.value = hoyInput();
-  if (!filtroAgv.value) filtroAgv.value = "";
-
-  btnFiltrar.addEventListener("click", (event) => {
-    event.preventDefault();
-    aplicarFiltroHistorico();
+  [filtroDesde, filtroHasta, filtroAgv].forEach((input) => {
+    if (input) {
+      input.addEventListener("change", aplicarFiltroHistorico);
+      input.addEventListener("keyup", aplicarFiltroHistorico);
+    }
   });
 
   historicoInicializado = true;
@@ -844,11 +958,10 @@ function initTabs() {
     tabHistorico.classList.toggle("tab-content--hidden", mostrarNueva);
 
     if (!mostrarNueva) {
-      if (!historicoInicializado) {
-        initFiltrosHistorico();
-      } else {
-        aplicarFiltroHistorico();
-      }
+      if (!historicoInicializado) initHistorico();
+      else aplicarFiltroHistorico();
+    } else {
+      resetFormulario();
     }
   };
 
@@ -883,8 +996,8 @@ function generarCSVDesdeIncidencias(lista) {
     "fallo_tipo",
     "fallo_detalle",
     "estado_carga",
-    "requiere_taller",
     "minutos_parada",
+    "requiere_taller",
     "posicion_codigo",
     "bateria_valor",
     "bateria_no_gmp",
@@ -899,8 +1012,9 @@ function generarCSVDesdeIncidencias(lista) {
     return str;
   };
 
-  const rows = (Array.isArray(lista) ? lista : []).map((inc) =>
-    [
+  const rows = (Array.isArray(lista) ? lista : []).map((inc) => {
+    const estadoCargaCsv = inc && (inc.estado_carga === 1 || inc.estado_carga === "1" || inc.estado_carga === true) ? 1 : 0;
+    return [
       inc.id,
       inc.created_at,
       inc.circuito,
@@ -909,17 +1023,17 @@ function generarCSVDesdeIncidencias(lista) {
       inc.incidente_hora,
       inc.fallo_tipo,
       inc.fallo_detalle,
-      inc.estado_carga,
-      inc.requiere_taller,
+      estadoCargaCsv,
       inc.minutos_parada,
+      inc.requiere_taller,
       inc.posicion_codigo,
       inc.bateria_valor,
       inc.bateria_no_gmp,
       inc.observaciones
     ]
       .map(escape)
-      .join(",")
-  );
+      .join(",");
+  });
 
   return [headers.join(","), ...rows].join("\n");
 }
@@ -928,7 +1042,7 @@ function generarCSVDesdeIncidencias(lista) {
  * Exporta las incidencias a CSV y dispara descarga.
  */
 function exportarCSV() {
-  const incidencias = obtenerIncidenciasParaExportar();
+  const incidencias = ultimoHistoricoFiltrado.length ? ultimoHistoricoFiltrado : obtenerIncidenciasParaExportar();
   if (!incidencias.length) {
     mostrarMensajeError("No hay incidencias para exportar.");
     return;
@@ -947,10 +1061,24 @@ function exportarCSV() {
   mostrarMensajeExito("Exportación CSV generada.");
 }
 
+function registrarEventosExportarCSV() {
+  const exportBtn = document.getElementById("btn_exportar_csv");
+  if (!exportBtn) {
+    console.warn("Botón de exportar CSV no encontrado");
+    return;
+  }
+  exportBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    exportarCSV();
+  });
+}
+
 /**
- * Limpia campos no persistentes tras guardar.
+ * Reinicia el formulario a un estado limpio y coherente.
  */
-function limpiarFormularioParcial() {
+function resetFormulario() {
+  const circuitoSelect = $("#circuito");
+  const agvSelect = $("#agv");
   const fechaIncidente = $("#incidente_fecha");
   const horaIncidente = $("#incidente_hora");
   const estadoVacio = $("#estado_vacio");
@@ -961,21 +1089,40 @@ function limpiarFormularioParcial() {
   const observaciones = $("#observaciones");
   const falloTipoSelect = $("#fallo_tipo");
   const falloDetalleSelect = $("#fallo_detalle");
+  const bateriaValor = $("#bateria_valor");
+  const bateriaNoGmp = $("#bateria_no_gmp");
 
-  if (fechaIncidente) fechaIncidente.value = "";
-  if (horaIncidente) horaIncidente.value = "";
+  if (circuitoSelect) circuitoSelect.value = "";
+
+  if (agvSelect) {
+    agvSelect.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Selecciona un circuito primero";
+    agvSelect.appendChild(opt);
+    agvSelect.disabled = true;
+  }
+
+  setDefaultsIncidenteAhora();
+
   if (estadoVacio) estadoVacio.checked = true;
   if (estadoLleno) estadoLleno.checked = false;
   if (requiereTaller) requiereTaller.checked = false;
   if (minutosParada) minutosParada.value = "0";
   if (posicionCodigo) posicionCodigo.value = "";
   if (observaciones) observaciones.value = "";
-  if (falloTipoSelect) {
-    falloTipoSelect.value = "";
-    actualizarDetalleSegunTipoFallo("");
-  }
+  if (bateriaValor) bateriaValor.value = "";
+  if (bateriaNoGmp) bateriaNoGmp.checked = false;
 
-  setDefaultsIncidenteAhora();
+  if (falloTipoSelect) falloTipoSelect.value = "";
+  if (falloDetalleSelect) {
+    falloDetalleSelect.innerHTML = "";
+    const optDetalle = document.createElement("option");
+    optDetalle.value = "";
+    optDetalle.textContent = "Selecciona primero un tipo de fallo";
+    falloDetalleSelect.appendChild(optDetalle);
+    falloDetalleSelect.disabled = true;
+  }
 }
 
 /**
@@ -988,7 +1135,16 @@ function registrarEventosGuardarIncidencia() {
   const manejarGuardado = () => {
     if (btnGuardar) btnGuardar.disabled = true;
     try {
-      const incidencia = crearIncidenciaDesdeFormulario();
+      limpiarMensajes();
+      limpiarErroresCampos();
+      const { esValido, camposInvalidos, valores } = validarCamposObligatorios();
+      if (!esValido) {
+        marcarErroresCampos(camposInvalidos);
+        mostrarMensajeError(`Revisa los campos: ${camposInvalidos.join(", ")}`);
+        return;
+      }
+
+      const incidencia = crearIncidenciaDesdeFormulario(valores);
       if (!incidencia) return;
 
       const lista = cargarIncidencias();
@@ -1000,7 +1156,7 @@ function registrarEventosGuardarIncidencia() {
       lista.push(incidencia);
       guardarIncidencias(lista);
 
-      limpiarFormularioParcial();
+      resetFormulario();
       refrescarTablaSegunTab();
 
       const minutosInfo = Number.isFinite(incidencia.minutos_parada) ? `${incidencia.minutos_parada} min` : "0 min";
@@ -1034,22 +1190,13 @@ function registrarEventosGuardarIncidencia() {
 function initFormulario() {
   const circuitoSelect = $("#circuito");
   const falloTipoSelect = $("#fallo_tipo");
-  const exportBtn = $("#btn_exportar_csv");
   const minutosParadaInput = $("#minutos_parada");
 
-  setDefaultsIncidenteAhora();
-  initEstadoCargaCheckboxes();
-  initTabs();
-  actualizarEstadoConexion("local", navigator.onLine);
-  window.addEventListener("online", () => actualizarEstadoConexion("local", true));
-  window.addEventListener("offline", () => actualizarEstadoConexion("local", false));
   if (minutosParadaInput) {
     minutosParadaInput.value = minutosParadaInput.value || "0";
     minutosParadaInput.max = "99";
     minutosParadaInput.min = "0";
   }
-  initAGV();
-  initFalloDetalle();
 
   if (circuitoSelect) {
     const placeholder = circuitoSelect.querySelector('option[value=""]')?.textContent || "Selecciona un circuito";
@@ -1062,14 +1209,20 @@ function initFormulario() {
     renderSelectOptions(falloTipoSelect, getFallosTipoOptions(), placeholder);
   }
 
+  resetFormulario();
+}
+
+function initApp() {
+  storageDisponibleFlag = storageDisponible();
+  initEstadoConexionUI();
+  initFormulario();
+  initEstadoCarro();
+  initAGV();
+  initFalloDetalle();
   registrarEventosGuardarIncidencia();
-
-  if (exportBtn) {
-    exportBtn.addEventListener("click", exportarCSV);
-  } else {
-    console.warn("Botón de exportar CSV no encontrado");
-  }
-
+  registrarEventosExportarCSV();
+  initTabs();
+  initHistorico();
   refrescarTablaSegunTab();
 }
 
@@ -1082,4 +1235,4 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-document.addEventListener("DOMContentLoaded", initFormulario);
+document.addEventListener("DOMContentLoaded", initApp);

@@ -1,7 +1,7 @@
 {
-  "name": "Registro de incidencia AGV",
+  "name": "Registro incidencias AGV",
   "short_name": "Incidencias AGV",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
@@ -17,6 +17,12 @@
       "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
+    },
+    {
+      "src": "icons/icon-agv.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

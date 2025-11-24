@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#1d4ed8">
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icons/icon-agv.svg">
   <title>Registro incidencia AGV</title>
 </head>
 <body>
@@ -93,6 +94,7 @@
                   <option value="bateria">Batería</option>
                   <option value="apagado">Apagado</option>
                   <option value="muy_despacio">Muy despacio</option>
+                  <option value="sick">Sick</option>
                 </select>
                 <p class="field-error" data-error-for="fallo_tipo" role="status" aria-live="polite"></p>
               </div>
@@ -143,7 +145,7 @@
               <div class="form-field">
                 <label for="posicion_codigo">Posición en el circuito</label>
                 <input type="text" id="posicion_codigo" name="posicion_codigo" placeholder="Código o referencia" aria-describedby="ayuda_posicion">
-                <small id="ayuda_posicion" class="help-text">Ejemplo: Tag, estación o zona.</small>
+                <small id="ayuda_posicion" class="help-text">Ejemplo: Tag, puesto, cruce.</small>
                 <p class="field-error" data-error-for="posicion_codigo" role="status" aria-live="polite"></p>
               </div>
 
@@ -168,12 +170,16 @@
           </div>
           <div class="form-row filtro-fechas">
             <div class="form-field">
-              <label for="filtro_desde">Desde</label>
-              <input type="date" id="filtro_desde" name="filtro_desde">
+              <label for="filtro_fecha_desde">Desde</label>
+              <input type="date" id="filtro_fecha_desde" name="filtro_fecha_desde">
             </div>
             <div class="form-field">
-              <label for="filtro_hasta">Hasta</label>
-              <input type="date" id="filtro_hasta" name="filtro_hasta">
+              <label for="filtro_fecha_hasta">Hasta</label>
+              <input type="date" id="filtro_fecha_hasta" name="filtro_fecha_hasta">
+            </div>
+            <div class="form-field">
+              <label for="filtro_agv">AGV</label>
+              <input type="text" id="filtro_agv" name="filtro_agv" placeholder="Filtrar por AGV">
             </div>
             <div class="form-field">
               <label>&nbsp;</label>
@@ -194,6 +200,7 @@
                   <th class="col-agv">AGV</th>
                   <th class="col-tipo">Tipo</th>
                   <th class="col-detalle">Detalle</th>
+                  <th class="col-estado">Estado</th>
                   <th class="col-minutos">Minutos parada</th>
                   <th class="col-posicion">Posición</th>
                   <th class="col-taller">Taller</th>
