@@ -94,6 +94,9 @@
                   <option value="bateria">Batería</option>
                   <option value="apagado">Apagado</option>
                   <option value="muy_despacio">Muy despacio</option>
+                  <option value="agv">AGV</option>
+                  <option value="seguidos">Seguidos</option>
+                  <option value="sin_carro">Sin carro</option>
                   <option value="sick">Sick</option>
                 </select>
                 <p class="field-error" data-error-for="fallo_tipo" role="status" aria-live="polite"></p>
@@ -204,9 +207,10 @@
                   <th class="col-minutos">Minutos parada</th>
                   <th class="col-posicion">Posición</th>
                   <th class="col-taller">Taller</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="historial_tbody">
               </tbody>
             </table>
           </div>

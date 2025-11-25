@@ -1,7 +1,8 @@
 /* eslint-env browser */
 // Configuración y catálogos
 const STORAGE_KEY = "agv_incidencias_v1";
-const SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 const TAB_NUEVA = "nueva";
 
 const CIRCUITOS = ["MO3", "MO1", "Portadores"];
@@ -27,7 +28,8 @@ const FALLOS = {
       { value: "parada_manual", label: "Parada manual" },
       { value: "parada_seta", label: "Parada seta" },
       { value: "velocidad_restaurada", label: "Velocidad restaurada" },
-      { value: "no_avanza", label: "No avanza" }
+      { value: "no_avanza", label: "No avanza" },
+      { value: "otro", label: "Otro" }
     ]
   },
   fuera_de_guia: {
@@ -37,7 +39,8 @@ const FALLOS = {
       { value: "junta_dilatacion", label: "Junta de dilatación" },
       { value: "guia_deteriorada", label: "Guía deteriorada" },
       { value: "direccion_bloqueada", label: "Dirección bloqueada" },
-      { value: "golpe", label: "Golpe" }
+      { value: "golpe", label: "Golpe" },
+      { value: "otro", label: "Otro" }
     ]
   },
   se_salta_parada: {
@@ -45,7 +48,8 @@ const FALLOS = {
     detalles: [
       { value: "error_centralita", label: "Error de centralita" },
       { value: "no_lee_tag", label: "No lee tag" },
-      { value: "no_ejecuta_tag", label: "No ejecuta tag" }
+      { value: "no_ejecuta_tag", label: "No ejecuta tag" },
+      { value: "otro", label: "Otro" }
     ]
   },
   bateria: {
@@ -54,7 +58,8 @@ const FALLOS = {
       { value: "descargada", label: "Descargada" },
       { value: "no_entra_carga_online", label: "No entra en carga online" },
       { value: "no_baja_pines_carga", label: "No baja pines de carga" },
-      { value: "fallo_sistema_carga", label: "Fallo sistema de carga" }
+      { value: "fallo_sistema_carga", label: "Fallo sistema de carga" },
+      { value: "otro", label: "Otro" }
     ]
   },
   apagado: {
@@ -63,16 +68,40 @@ const FALLOS = {
       { value: "mala_conexion_bateria", label: "Mala conexión de batería" },
       { value: "bateria_suelta", label: "Batería suelta" },
       { value: "apagado_manual", label: "Apagado manual" },
-      { value: "fallo_interno", label: "Fallo interno" }
+      { value: "fallo_interno", label: "Fallo interno" },
+      { value: "otro", label: "Otro" }
     ]
   },
   muy_despacio: {
     label: "Muy despacio",
     detalles: [
-      { value: "reduccion_seguridad", label: "Reducción de seguridad" },
+      { value: "reduccion_seguridad", label: "Red vel por escáner" },
       { value: "no_lee_tags", label: "No lee tags" },
       { value: "mapa_incorrecto", label: "Mapa incorrecto" },
-      { value: "fallo_interno", label: "Fallo interno" }
+      { value: "fallo_interno", label: "Fallo interno" },
+      { value: "otro", label: "Otro" }
+    ]
+  },
+  agv: {
+    label: "AGV",
+    detalles: [
+      { value: "rueda", label: "Rueda" },
+      { value: "carroceria", label: "Carrocería" },
+      { value: "antena", label: "Antena" },
+      { value: "pin_suelto", label: "Pin suelto" },
+      { value: "otro", label: "Otro" }
+    ]
+  },
+  seguidos: {
+    label: "Seguidos",
+    detalles: [{ value: "otro", label: "Otro" }]
+  },
+  sin_carro: {
+    label: "Sin carro",
+    detalles: [
+      { value: "de_gmp", label: "De GMP" },
+      { value: "baja_pin_de_carro", label: "Baja pin de carro" },
+      { value: "otro", label: "Otro" }
     ]
   },
   sick: {
@@ -87,23 +116,41 @@ const FALLOS = {
   }
 };
 
+const CSV_COLUMNS = [
+  "id",
+  "created_at",
+  "schema_version",
+  "circuito",
+  "agv",
+  "bateria_valor",
+  "es_gmp",
+  "incidente_fecha",
+  "incidente_hora",
+  "fallo_tipo",
+  "fallo_detalle",
+  "estado_carga",
+  "minutos_incidente",
+  "requiere_taller",
+  "posicion_codigo",
+  "observaciones"
+];
+
 /**
  * @typedef {Object} IncidenciaAGV
  * @property {string} id
  * @property {string} created_at
  * @property {string} circuito
- * @property {string} agv_id
+ * @property {string} agv
  * @property {string} incidente_fecha
  * @property {string} incidente_hora
  * @property {string} fallo_tipo
  * @property {string} fallo_detalle
+ * @property {string} bateria_valor
+ * @property {number} es_gmp
  * @property {number} estado_carga
- * @property {number|null} bateria_valor
- * @property {boolean} bateria_no_gmp
- * @property {boolean} requiere_taller
- * @property {number} minutos_parada
+ * @property {number} minutos_incidente
+ * @property {number} requiere_taller
  * @property {string} posicion_codigo
- * @property {string} posicion_nota
  * @property {string} observaciones
  * @property {number} schema_version
  */
@@ -125,10 +172,10 @@ function storageDisponible() {
 }
 
 /**
- * Lee incidencias desde localStorage.
- * @returns {IncidenciaAGV[]} Lista de incidencias o []
+ * Lee incidencias crudas desde localStorage sin migrar.
+ * @returns {any[]} Lista cruda
  */
-function cargarIncidencias() {
+function cargarIncidenciasCrudas() {
   if (!storageDisponibleFlag && !storageDisponible()) {
     storageDisponibleFlag = false;
     mostrarMensajeError("El almacenamiento local no está disponible en este navegador.");
@@ -140,7 +187,7 @@ function cargarIncidencias() {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.warn("No se pudieron parsear las incidencias almacenadas", error);
+    console.error("Error parseando incidencias de localStorage", error);
     return [];
   }
 }
@@ -161,6 +208,115 @@ function guardarIncidencias(lista) {
   } catch (error) {
     console.error("No se pudieron guardar las incidencias", error);
   }
+}
+
+function generarIdIncidencia() {
+  const now = Date.now();
+  if (typeof self !== "undefined" && self.crypto && self.crypto.randomUUID) {
+    return self.crypto.randomUUID();
+  }
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `inc-${now}-${Math.random().toString(16).slice(2)}`;
+}
+
+/**
+ * Normaliza incidencias antiguas al modelo actual sin perder datos.
+ * @param {any[]} lista
+ * @returns {IncidenciaAGV[]}
+ */
+function migrarIncidenciasAntiguas(lista) {
+  if (!Array.isArray(lista)) return [];
+
+  return lista.map((inc) => {
+    const copia = { ...inc };
+
+    const agvNormalizado = (() => {
+      if (copia.agv !== undefined && copia.agv !== null) return String(copia.agv).trim();
+      if (copia.agv_id !== undefined && copia.agv_id !== null) return String(copia.agv_id).trim();
+      return "";
+    })();
+
+    const estadoCarga = (() => {
+      const valor = copia.estado_carga;
+      if (valor === 1 || valor === "1" || valor === true || valor === "true") return 1;
+      return 0;
+    })();
+
+    const requiereTaller = (() => {
+      const valor = copia.requiere_taller;
+      if (valor === 1 || valor === "1" || valor === true || valor === "true") return 1;
+      return 0;
+    })();
+
+    const minutosIncidente = (() => {
+      const base = copia.minutos_incidente ?? copia.minutos_parada ?? 0;
+      const n = Number(base);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.min(Math.round(n), 9999);
+    })();
+
+    const esGmp = (() => {
+      if (typeof copia.es_gmp === "number") return copia.es_gmp;
+      if (typeof copia.bateria_no_gmp === "boolean") return copia.bateria_no_gmp ? 0 : 1;
+      if (copia.bateria_no_gmp === 1 || copia.bateria_no_gmp === "1") return 0;
+      return 1; // Por defecto consideramos que es de GMP
+    })();
+
+    const bateriaValor = (() => {
+      if (copia.bateria_valor === undefined || copia.bateria_valor === null) return "";
+      return String(copia.bateria_valor).trim();
+    })();
+
+    const posicionCodigo = (copia.posicion_codigo || copia.posicion_nota || copia.posicion || "").toString().trim();
+    const observaciones = (copia.observaciones || "").toString().trim();
+
+    const fechaIncidente = (copia.incidente_fecha || "").toString().trim();
+    const horaIncidente = (copia.incidente_hora || "").toString().trim();
+
+    const createdAt = (() => {
+      if (copia.created_at) return copia.created_at;
+      if (fechaIncidente && horaIncidente) return `${fechaIncidente}T${horaIncidente}:00`;
+      return new Date().toISOString();
+    })();
+
+    return {
+      id: copia.id || generarIdIncidencia(),
+      schema_version: CURRENT_SCHEMA_VERSION,
+      created_at: createdAt,
+      circuito: (copia.circuito || "").toString().trim(),
+      agv: agvNormalizado,
+      bateria_valor: bateriaValor,
+      es_gmp: esGmp,
+      incidente_fecha: fechaIncidente,
+      incidente_hora: horaIncidente,
+      fallo_tipo: (copia.fallo_tipo || "").toString().trim(),
+      fallo_detalle: (copia.fallo_detalle || "").toString().trim(),
+      estado_carga: estadoCarga,
+      minutos_incidente: minutosIncidente,
+      requiere_taller: requiereTaller,
+      posicion_codigo: posicionCodigo,
+      observaciones
+    };
+  });
+}
+
+/**
+ * Lee incidencias migradas desde localStorage.
+ * @returns {IncidenciaAGV[]} Lista migrada
+ */
+function cargarIncidencias() {
+  if (!storageDisponibleFlag && !storageDisponible()) {
+    storageDisponibleFlag = false;
+    mostrarMensajeError("El almacenamiento local no está disponible en este navegador.");
+    return [];
+  }
+
+  const crudas = cargarIncidenciasCrudas();
+  const migradas = migrarIncidenciasAntiguas(crudas);
+  guardarIncidencias(migradas);
+  return migradas;
 }
 
 // Utilidades de fechas/formatos
@@ -367,7 +523,7 @@ function existeIncidenciaDuplicada(lista, nueva) {
   return lista.some(
     (inc) =>
       inc.circuito === nueva.circuito &&
-      inc.agv_id === nueva.agv_id &&
+      inc.agv === nueva.agv &&
       inc.incidente_fecha === nueva.incidente_fecha &&
       inc.incidente_hora === nueva.incidente_hora &&
       inc.fallo_tipo === nueva.fallo_tipo &&
@@ -376,44 +532,46 @@ function existeIncidenciaDuplicada(lista, nueva) {
 }
 
 /**
- * Crea un objeto de incidencia con la estructura base.
+ * Crea un objeto de incidencia con la estructura base unificada.
  * @param {Partial<IncidenciaAGV>} [formValues={}]
  * @returns {IncidenciaAGV}
  */
 function crearIncidenciaBase(formValues = {}) {
-  const now = new Date();
-  const generatedId = typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `inc-${now.getTime()}-${Math.random().toString(16).slice(2)}`;
+  const nowIso = new Date().toISOString();
+  const generatedId = generarIdIncidencia();
 
-  const requiereTaller = (() => {
-    if (typeof formValues.requiere_taller === "string") {
-      return ["true", "1", "on", "si", "sí"].includes(formValues.requiere_taller.toLowerCase());
-    }
-    return Boolean(formValues.requiere_taller);
-  })();
-
-  const minutosParada = Number(formValues.minutos_parada);
   const estadoCarga = formValues.estado_carga === 1 || formValues.estado_carga === "1" || formValues.estado_carga === true ? 1 : 0;
+  const requiereTaller = formValues.requiere_taller === 1 || formValues.requiere_taller === "1" || formValues.requiere_taller === true ? 1 : 0;
+  const minutosIncidente = (() => {
+    const n = Number(formValues.minutos_incidente);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(Math.round(n), 9999);
+  })();
+  const esGmp = (() => {
+    if (formValues.es_gmp === 0 || formValues.es_gmp === "0") return 0;
+    if (formValues.es_gmp === 1 || formValues.es_gmp === "1") return 1;
+    if (formValues.es_gmp === false) return 0;
+    if (formValues.es_gmp === true) return 1;
+    return 1; // Por defecto se considera que es de GMP
+  })();
 
   return {
     id: formValues.id || generatedId,
-    created_at: formValues.created_at || now.toISOString(),
-    circuito: formValues.circuito || "",
-    agv_id: formValues.agv_id || "",
-    incidente_fecha: formValues.incidente_fecha || "",
-    incidente_hora: formValues.incidente_hora || "",
-    fallo_tipo: formValues.fallo_tipo || "",
-    fallo_detalle: formValues.fallo_detalle || "",
+    schema_version: formValues.schema_version || CURRENT_SCHEMA_VERSION,
+    created_at: formValues.created_at || nowIso,
+    circuito: (formValues.circuito || "").toString().trim(),
+    agv: formValues.agv !== undefined && formValues.agv !== null ? String(formValues.agv).trim() : "",
+    bateria_valor: formValues.bateria_valor !== undefined && formValues.bateria_valor !== null ? String(formValues.bateria_valor).trim() : "",
+    es_gmp: esGmp,
+    incidente_fecha: (formValues.incidente_fecha || "").toString().trim(),
+    incidente_hora: (formValues.incidente_hora || "").toString().trim(),
+    fallo_tipo: (formValues.fallo_tipo || "").toString().trim(),
+    fallo_detalle: (formValues.fallo_detalle || "").toString().trim(),
     estado_carga: estadoCarga,
-    bateria_valor: Number.isFinite(formValues.bateria_valor) ? formValues.bateria_valor : null,
-    bateria_no_gmp: Boolean(formValues.bateria_no_gmp),
+    minutos_incidente: minutosIncidente,
     requiere_taller: requiereTaller,
-    minutos_parada: Number.isFinite(minutosParada) ? minutosParada : 0,
-    posicion_codigo: formValues.posicion_codigo || "",
-    posicion_nota: formValues.posicion_nota || "",
-    observaciones: formValues.observaciones || "",
-    schema_version: formValues.schema_version || SCHEMA_VERSION
+    posicion_codigo: (formValues.posicion_codigo || "").toString().trim(),
+    observaciones: (formValues.observaciones || "").toString().trim()
   };
 }
 
@@ -522,39 +680,36 @@ function crearIncidenciaDesdeFormulario(valoresObligatorios) {
   const estadoVacio = Boolean($("#estado_vacio")?.checked);
   const estadoLleno = Boolean($("#estado_lleno")?.checked);
   const estadoCarga = estadoLleno ? 1 : 0;
-  const requiereTaller = Boolean($("#requiere_taller")?.checked);
+  const requiereTaller = ($("#requiere_taller")?.checked ? 1 : 0);
   const minutosInput = document.getElementById("minutos_parada");
-  let minutosParada = 0;
+  let minutosIncidente = 0;
   if (minutosInput && minutosInput.value !== "") {
     const n = Number(minutosInput.value);
     if (!Number.isNaN(n) && n >= 0) {
-      minutosParada = Math.min(n, 99);
+      minutosIncidente = Math.min(Math.round(n), 9999);
     }
   }
-  const posicionCodigo = $("#posicion_codigo")?.value || "";
-  const observaciones = $("#observaciones")?.value || "";
+  const posicionCodigo = ($("#posicion_codigo")?.value || "").trim();
+  const observaciones = ($("#observaciones")?.value || "").trim();
   const bateriaValorInput = document.getElementById("bateria_valor");
-  const bateriaValorParsed = bateriaValorInput ? parseInt(bateriaValorInput.value, 10) : NaN;
-  const bateriaValor = Number.isFinite(bateriaValorParsed) && bateriaValorParsed >= 0 ? Math.min(bateriaValorParsed, 999) : null;
-  const bateriaNoGmp = Boolean(document.getElementById("bateria_no_gmp")?.checked);
+  const bateriaValorParsed = bateriaValorInput ? bateriaValorInput.value : "";
+  const bateriaValor = bateriaValorParsed === null || bateriaValorParsed === undefined ? "" : String(bateriaValorParsed).trim();
+  // Convención: es_gmp = 1 si NO está marcado "No es de GMP"; es_gmp = 0 si está marcado.
+  const esGmp = document.getElementById("bateria_no_gmp")?.checked ? 0 : 1;
 
-  const timestamp = Date.now();
   const payload = crearIncidenciaBase({
-    id: `${circuito}-${agv}-${timestamp}`,
-    created_at: new Date().toISOString(),
     circuito,
-    agv_id: agv,
+    agv,
     incidente_fecha: fechaIncidente,
     incidente_hora: horaIncidente,
     fallo_tipo: tipoFallo,
     fallo_detalle: detalleFallo,
     estado_carga: estadoCarga,
     bateria_valor: bateriaValor,
-    bateria_no_gmp: bateriaNoGmp,
+    es_gmp: esGmp,
     requiere_taller: requiereTaller,
-    minutos_parada: minutosParada,
+    minutos_incidente: minutosIncidente,
     posicion_codigo: posicionCodigo,
-    posicion_nota: posicionCodigo,
     observaciones
   });
 
@@ -670,7 +825,7 @@ function actualizarResumenIncidencias() {
       const fechaHora = ultima.incidente_fecha && ultima.incidente_hora
         ? `${ultima.incidente_fecha} ${ultima.incidente_hora}`
         : ultima.incidente_fecha || ultima.created_at || "";
-      ultimaEl.textContent = `${fechaHora} · ${ultima.circuito || ""} ${ultima.agv_id || ""} · ${ultima.fallo_tipo || ""}`.trim();
+      ultimaEl.textContent = `${fechaHora} · ${ultima.circuito || ""} ${ultima.agv || ""} · ${ultima.fallo_tipo || ""}`.trim();
     }
   }
 }
@@ -804,7 +959,7 @@ function actualizarFalloDetalleSelect(falloTipoSelect, falloDetalleSelect) {
  * @param {IncidenciaAGV[]} [lista]
  */
 function renderTablaIncidencias(lista) {
-  const tbody = document.querySelector("#tabla_incidencias tbody");
+  const tbody = document.getElementById("historial_tbody") || document.querySelector("#tabla_incidencias tbody");
   if (!tbody) {
     console.warn("No se encontró el tbody de la tabla de incidencias");
     return;
@@ -816,8 +971,9 @@ function renderTablaIncidencias(lista) {
   if (!incidencias.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 9;
-    cell.textContent = "No hay incidencias registradas.";
+    cell.colSpan = 10;
+    cell.textContent = "No hay incidencias para la fecha seleccionada.";
+    cell.classList.add("historial-vacio");
     row.appendChild(cell);
     tbody.appendChild(row);
     actualizarResumenIncidencias();
@@ -832,16 +988,18 @@ function renderTablaIncidencias(lista) {
     const estadoTexto = inc && (inc.estado_carga === 1 || inc.estado_carga === "1" || inc.estado_carga === true) ? "Lleno" : "Vacío";
     const tipoLabel = FALLOS[inc.fallo_tipo]?.label || inc.fallo_tipo || "-";
     const detalleLabel = (FALLOS[inc.fallo_tipo]?.detalles || []).find((d) => d.value === inc.fallo_detalle)?.label || inc.fallo_detalle || "-";
+    const posicionTexto = inc.posicion_codigo || inc.posicion_nota || inc.posicion || "-";
+    const incidenciaId = inc.id || "";
 
     const columns = [
       fechaIncidente || "-",
       inc.circuito || "-",
-      inc.agv_id || "-",
+      inc.agv || "-",
       tipoLabel,
       detalleLabel,
       estadoTexto,
-      Number.isFinite(inc.minutos_parada) ? inc.minutos_parada : "-",
-      inc.posicion_codigo || "-",
+      Number.isFinite(inc.minutos_incidente) ? inc.minutos_incidente : "-",
+      posicionTexto,
       inc.requiere_taller ? "Sí" : "No"
     ];
 
@@ -850,6 +1008,18 @@ function renderTablaIncidencias(lista) {
       cell.textContent = value;
       row.appendChild(cell);
     });
+
+    const accionesCell = document.createElement("td");
+    const btnBorrar = document.createElement("button");
+    btnBorrar.type = "button";
+    btnBorrar.className = "btn-borrar";
+    if (incidenciaId) btnBorrar.dataset.id = incidenciaId;
+    btnBorrar.setAttribute("aria-label", "Eliminar incidencia");
+    btnBorrar.title = "Eliminar incidencia";
+    btnBorrar.textContent = "🗑";
+    if (!incidenciaId) btnBorrar.disabled = true;
+    accionesCell.appendChild(btnBorrar);
+    row.appendChild(accionesCell);
 
     tbody.appendChild(row);
   });
@@ -886,7 +1056,7 @@ function filtrarIncidencias(desde, hasta, agvFiltro) {
     if (useHasta && (!fecha || fecha > hasta)) return false;
 
     if (useAgv) {
-      const agvVal = (inc.agv_id || "").toString().toLowerCase();
+      const agvVal = (inc.agv || "").toString().toLowerCase();
       if (!agvVal.includes(agvTerm)) return false;
     }
     return true;
@@ -900,12 +1070,26 @@ let historicoInicializado = false;
 let ultimoHistoricoFiltrado = [];
 
 function aplicarFiltroHistorico() {
-  const desde = $("#filtro_fecha_desde")?.value || "";
-  const hasta = $("#filtro_fecha_hasta")?.value || "";
-  const agvFiltro = $("#filtro_agv")?.value || "";
+  const desde = ($("#filtro_fecha_desde")?.value || "").trim();
+  const hasta = ($("#filtro_fecha_hasta")?.value || "").trim();
+  const agvFiltro = ($("#filtro_agv")?.value || "").trim();
   const filtradas = filtrarIncidencias(desde, hasta, agvFiltro);
   ultimoHistoricoFiltrado = filtradas;
   renderTablaIncidencias(filtradas);
+}
+
+function eliminarIncidenciaPorId(id) {
+  if (!id) return;
+  const incidencias = cargarIncidencias();
+  const index = incidencias.findIndex((inc) => inc.id === id);
+  if (index === -1) {
+    mostrarMensajeError("No se encontró la incidencia a eliminar.");
+    return;
+  }
+  incidencias.splice(index, 1);
+  guardarIncidencias(incidencias);
+  mostrarMensajeExito("Incidencia eliminada.");
+  aplicarFiltroHistorico();
 }
 
 function initHistorico() {
@@ -913,8 +1097,13 @@ function initHistorico() {
   const filtroHasta = $("#filtro_fecha_hasta");
   const btnFiltrar = $("#btn_filtrar_historico");
   const filtroAgv = $("#filtro_agv");
+  const historialTbody = document.getElementById("historial_tbody") || document.querySelector("#tabla_incidencias tbody");
 
   if (filtroAgv && !filtroAgv.value) filtroAgv.value = "";
+
+  const hoy = hoyInput();
+  if (filtroDesde && !filtroDesde.value) filtroDesde.value = hoy;
+  if (filtroHasta && !filtroHasta.value) filtroHasta.value = hoy;
 
   if (btnFiltrar) {
     btnFiltrar.addEventListener("click", (event) => {
@@ -927,8 +1116,21 @@ function initHistorico() {
     if (input) {
       input.addEventListener("change", aplicarFiltroHistorico);
       input.addEventListener("keyup", aplicarFiltroHistorico);
+      input.addEventListener("input", aplicarFiltroHistorico);
     }
   });
+
+  if (historialTbody) {
+    historialTbody.addEventListener("click", (event) => {
+      const target = event.target.closest(".btn-borrar");
+      if (!target) return;
+      const id = target.dataset.id;
+      if (!id) return;
+      const ok = window.confirm("¿Seguro que quieres eliminar esta incidencia?");
+      if (!ok) return;
+      eliminarIncidenciaPorId(id);
+    });
+  }
 
   historicoInicializado = true;
   aplicarFiltroHistorico();
@@ -980,69 +1182,32 @@ function obtenerIncidenciasParaExportar() {
   return cargarIncidencias();
 }
 
+function toCsvValue(value) {
+  const str = value === undefined || value === null ? "" : String(value);
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 /**
  * Genera un CSV (string) desde una lista de incidencias.
  * @param {IncidenciaAGV[]} lista
  * @returns {string}
  */
 function generarCSVDesdeIncidencias(lista) {
-  const headers = [
-    "id",
-    "created_at",
-    "circuito",
-    "agv_id",
-    "incidente_fecha",
-    "incidente_hora",
-    "fallo_tipo",
-    "fallo_detalle",
-    "estado_carga",
-    "minutos_parada",
-    "requiere_taller",
-    "posicion_codigo",
-    "bateria_valor",
-    "bateria_no_gmp",
-    "observaciones"
-  ];
+  const rows = (Array.isArray(lista) ? lista : []).map((inc) =>
+    CSV_COLUMNS.map((col) => toCsvValue(inc?.[col])).join(",")
+  );
 
-  const escape = (value) => {
-    const str = value === undefined || value === null ? "" : String(value);
-    if (/[",\n]/.test(str)) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
-
-  const rows = (Array.isArray(lista) ? lista : []).map((inc) => {
-    const estadoCargaCsv = inc && (inc.estado_carga === 1 || inc.estado_carga === "1" || inc.estado_carga === true) ? 1 : 0;
-    return [
-      inc.id,
-      inc.created_at,
-      inc.circuito,
-      inc.agv_id,
-      inc.incidente_fecha,
-      inc.incidente_hora,
-      inc.fallo_tipo,
-      inc.fallo_detalle,
-      estadoCargaCsv,
-      inc.minutos_parada,
-      inc.requiere_taller,
-      inc.posicion_codigo,
-      inc.bateria_valor,
-      inc.bateria_no_gmp,
-      inc.observaciones
-    ]
-      .map(escape)
-      .join(",");
-  });
-
-  return [headers.join(","), ...rows].join("\n");
+  return [CSV_COLUMNS.join(","), ...rows].join("\n");
 }
 
 /**
  * Exporta las incidencias a CSV y dispara descarga.
  */
 function exportarCSV() {
-  const incidencias = ultimoHistoricoFiltrado.length ? ultimoHistoricoFiltrado : obtenerIncidenciasParaExportar();
+  const incidencias = historicoInicializado ? ultimoHistoricoFiltrado : obtenerIncidenciasParaExportar();
   if (!incidencias.length) {
     mostrarMensajeError("No hay incidencias para exportar.");
     return;
@@ -1159,8 +1324,8 @@ function registrarEventosGuardarIncidencia() {
       resetFormulario();
       refrescarTablaSegunTab();
 
-      const minutosInfo = Number.isFinite(incidencia.minutos_parada) ? `${incidencia.minutos_parada} min` : "0 min";
-      mostrarMensajeExito(`Incidencia guardada para ${incidencia.circuito || ""} ${incidencia.agv_id || ""} (${incidencia.fallo_tipo || ""} · ${minutosInfo}).`);
+      const minutosInfo = Number.isFinite(incidencia.minutos_incidente) ? `${incidencia.minutos_incidente} min` : "0 min";
+      mostrarMensajeExito(`Incidencia guardada para ${incidencia.circuito || ""} ${incidencia.agv || ""} (${incidencia.fallo_tipo || ""} · ${minutosInfo}).`);
     } finally {
       if (btnGuardar) btnGuardar.disabled = false;
     }
